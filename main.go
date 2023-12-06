@@ -42,6 +42,8 @@ func client_handler(socket net.Conn, ch chan<- [buffer_size]byte) {
 
 	Clients[id] = client
 
+	defer delete(Clients, id)
+
 	reader := bufio.NewReader(socket)
 	for {
 		socket.Write([]byte(client.Name + "# ")) // echo
@@ -50,15 +52,15 @@ func client_handler(socket net.Conn, ch chan<- [buffer_size]byte) {
 
 		if err != nil {
 			log.Println("Failed to read bytes")
+			copy(chunk[:], "\n[EVENT] Client "+client.Name+" disconnected from the chat\n")
+			go broadcast_message(client, chunk)
 			return
 		}
 
 		if len(client.Messages) < max_message_per_client {
 			client.Messages = append(client.Messages[:], message)
+			copy(chunk[:], message)
 
-			for i := 0; i < len(message) && i < 64; i++ {
-				chunk[i] = message[i]
-			}
 			ch <- chunk
 
 			go broadcast_message(client, chunk)
@@ -78,7 +80,7 @@ func broadcast_message(client *Client, buff [buffer_size]byte) {
 	}
 }
 
-func server_handler(ch <-chan [buffer_size]byte) {
+func message_handler(ch <-chan [buffer_size]byte) {
 	for chunk := range ch {
 		log.Println(chunk)
 	}
@@ -95,7 +97,7 @@ func main() {
 	Clients = map[string]*Client{}
 	ch := make(chan [buffer_size]byte)
 
-	go server_handler(ch)
+	go message_handler(ch)
 
 	for {
 		conn, err := listener.Accept()
